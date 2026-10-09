@@ -29,7 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = host
         popover.behavior = .transient
 
-        monitor.onUpdate = { [weak self] in self?.refreshStatus() }
+        monitor.onUpdate = { [weak self] in
+            guard let self else { return }
+            self.refreshStatus()
+            self.fans.reinforce(using: self.monitor.snapshot.fans)
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(refreshStatus),
                                                name: UserDefaults.didChangeNotification, object: nil)
         monitor.start()

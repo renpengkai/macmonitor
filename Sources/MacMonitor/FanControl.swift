@@ -92,6 +92,8 @@ final class FanController: ObservableObject {
     /// 用户在界面上选择的模式; 未选择过的风扇沿用 SMC 报告的实际模式
     @Published var modes: [Int: Mode] = [:]
     @Published var targets: [Int: Double] = [:]
+    /// 锁定的目标转速; 退出后仍保持, 下次启动自动恢复
+    @Published private(set) var locks: [Int: Double] = [:]
     @Published private(set) var busy = false
     @Published private(set) var message: String?
     @Published private(set) var helperReady = false
@@ -99,20 +101,31 @@ final class FanController: ObservableObject {
     private let queue = DispatchQueue(label: "macmonitor.fanctl")
     /// 本次运行是否改动过风扇, 退出时据此决定是否恢复自动
     private var touched = false
+    /// 正在恢复锁定, 避免采样回调重复触发
+    private var restoring = false
 
     init() {
+        locks = Self.loadLocks()
         queue.async {
             let ready = FanHelper.isReady
-            DispatchQueue.main.async { self.helperReady = ready }
+            DispatchQueue.main.async {
+                self.helperReady = ready
+                if ready { self.restoreLocks() }
+            }
         }
     }
 
+    func isLocked(_ fan: FanInfo) -> Bool {
+        locks[fan.id] != nil
+    }
+
     func mode(of fan: FanInfo) -> Mode {
-        modes[fan.id] ?? (fan.manual ? .manual : .auto)
+        if locks[fan.id] != nil { return .manual }
+        return modes[fan.id] ?? (fan.manual ? .manual : .auto)
     }
 
     func target(of fan: FanInfo) -> Double {
-        let value = targets[fan.id] ?? (fan.target > 0 ? fan.target : fan.current)
+        let value = locks[fan.id] ?? targets[fan.id] ?? (fan.target > 0 ? fan.target : fan.current)
         return min(max(value, fan.min), fan.max)
     }
 
@@ -123,17 +136,54 @@ final class FanController: ObservableObject {
             targets[fan.id] = target(of: fan)
             apply(fan.id)
         case .auto:
+            clearLock(fan.id)
             run(["auto", "\(fan.id)"])
         }
     }
 
     func setTarget(_ rpm: Double, for fan: FanInfo) {
         targets[fan.id] = rpm
+        if locks[fan.id] != nil {
+            var next = locks
+            next[fan.id] = rpm
+            locks = next
+            persistLocks()
+        }
+    }
+
+    /// 锁定后退出应用不再恢复自动, 下次启动会重新写入该转速
+    func setLocked(_ locked: Bool, for fan: FanInfo) {
+        if locked {
+            let rpm = target(of: fan)
+            modes[fan.id] = .manual
+            targets[fan.id] = rpm
+            var next = locks
+            next[fan.id] = rpm
+            locks = next
+            persistLocks()
+            apply(fan.id)
+        } else {
+            clearLock(fan.id)
+        }
     }
 
     func apply(_ id: Int) {
-        guard let rpm = targets[id] else { return }
+        guard let rpm = targets[id] ?? locks[id] else { return }
         run(["set", "\(id)", "\(Int(rpm.rounded()))"])
+    }
+
+    /// 采样发现系统夺回控制权时, 把锁定的风扇重新写回目标转速
+    func reinforce(using fans: [FanInfo]) {
+        guard helperReady, !locks.isEmpty, !busy, !restoring else { return }
+        for fan in fans {
+            guard let rpm = locks[fan.id] else { continue }
+            let drifted = !fan.manual || (fan.target > 0 && abs(fan.target - rpm) > 80)
+            if drifted {
+                modes[fan.id] = .manual
+                targets[fan.id] = rpm
+                apply(fan.id)
+            }
+        }
     }
 
     func install() {
@@ -144,20 +194,77 @@ final class FanController: ObservableObject {
         }
         helperReady = FanHelper.isReady
         if !helperReady && message == nil { message = "安装后校验失败" }
+        if helperReady { restoreLocks() }
     }
 
     func uninstall() {
-        resetNow()
+        locks = [:]
+        persistLocks()
+        if helperReady {
+            FanHelper.run(["reset"])
+            touched = false
+        }
         if let error = FanHelper.uninstall() { message = error }
         helperReady = FanHelper.isReady
         modes.removeAll()
+        targets.removeAll()
     }
 
-    /// 应用退出时同步恢复自动控制, 避免风扇停在手动转速
+    /// 应用退出时: 未锁定的风扇恢复自动控制; 已锁定的保持手动转速
     func resetNow() {
-        guard touched, helperReady else { return }
-        FanHelper.run(["reset"])
+        guard helperReady else { return }
+        if locks.isEmpty {
+            guard touched else { return }
+            FanHelper.run(["reset"])
+            touched = false
+            return
+        }
+        for (id, mode) in modes where mode == .manual && locks[id] == nil {
+            FanHelper.run(["auto", "\(id)"])
+        }
+        for (id, rpm) in locks {
+            FanHelper.run(["set", "\(id)", "\(Int(rpm.rounded()))"])
+        }
         touched = false
+    }
+
+    private func restoreLocks() {
+        guard !locks.isEmpty else { return }
+        restoring = true
+        for (id, rpm) in locks {
+            modes[id] = .manual
+            targets[id] = rpm
+            run(["set", "\(id)", "\(Int(rpm.rounded()))"])
+        }
+        // 等队列里的写入完成后再允许 reinforce, 避免启动时连打
+        queue.async {
+            DispatchQueue.main.async { self.restoring = false }
+        }
+    }
+
+    private func clearLock(_ id: Int) {
+        guard locks[id] != nil else { return }
+        var next = locks
+        next.removeValue(forKey: id)
+        locks = next
+        persistLocks()
+    }
+
+    private func persistLocks() {
+        let stored = Dictionary(uniqueKeysWithValues: locks.map { (String($0.key), $0.value) })
+        UserDefaults.standard.set(stored, forKey: Settings.fanLocks)
+    }
+
+    private static func loadLocks() -> [Int: Double] {
+        guard let stored = UserDefaults.standard.dictionary(forKey: Settings.fanLocks) as? [String: Double] else {
+            return [:]
+        }
+        var result: [Int: Double] = [:]
+        for (key, value) in stored {
+            guard let id = Int(key), value.isFinite, value >= 0 else { continue }
+            result[id] = value
+        }
+        return result
     }
 
     private func run(_ args: [String]) {

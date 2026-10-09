@@ -173,6 +173,19 @@ private struct FanCard: View {
                            })
                     .controlSize(.small)
                     InfoRow(label: "目标转速", value: "\(Int(control.target(of: fan))) RPM  (\(Int(fan.min))–\(Int(fan.max)))")
+                    Toggle(isOn: Binding(
+                        get: { control.isLocked(fan) },
+                        set: { control.setLocked($0, for: fan) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("锁定转速")
+                            Text("退出后保持, 下次启动自动恢复")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .controlSize(.small)
+                    .toggleStyle(.switch)
                 }
             }
         }

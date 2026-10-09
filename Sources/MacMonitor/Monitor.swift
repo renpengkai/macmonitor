@@ -70,6 +70,8 @@ enum Settings {
     static let barTemp = "bar.temp"
     static let barPower = "bar.power"
     static let barFan = "bar.fan"
+    /// 锁定的风扇转速: UserDefaults 存 `[String: Double]`, key 为风扇编号
+    static let fanLocks = "fan.locks"
 
     static let defaults: [String: Any] = [
         barCPU: true,
