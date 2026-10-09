@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 构建 release 二进制并组装成 dist/MacMonitor.app + zip。需要在装有 Xcode 的 macOS 上运行 (即 GitHub Actions)。
-#   VERSION  CFBundleShortVersionString, 默认 0.1.1
+#   VERSION  CFBundleShortVersionString, 默认 0.1.2
 #   BUILD    CFBundleVersion, 默认 1
 set -euo pipefail
 
-VERSION="${VERSION:-0.1.1}"
+VERSION="${VERSION:-0.1.2}"
 BUILD="${BUILD:-1}"
 ARCH="arm64"
 NAME="MacMonitor"
@@ -19,7 +19,7 @@ BIN_DIR="$(swift build -c release --arch "$ARCH" --show-bin-path)"
 DIST="$ROOT/dist"
 APP="$DIST/$NAME.app"
 rm -rf "$DIST"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 for BIN in "$NAME" "$HELPER"; do
@@ -38,6 +38,7 @@ sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
     "$ROOT/Packaging/Info.plist" > "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+cp "$ROOT/Packaging/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # ad-hoc 签名: Apple Silicon 要求可执行文件至少有签名才能运行; 先签内层工具再签整个 App
 codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/$HELPER"

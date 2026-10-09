@@ -5,3 +5,4 @@ dist/
 .tmp/
 .deps/
 __pycache__/
+.venv*/
