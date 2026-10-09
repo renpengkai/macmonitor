@@ -28,7 +28,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             export VERSION="${GITHUB_REF_NAME#v}"
           else
-            export VERSION="0.1.0"
+            export VERSION="0.1.1"
           fi
           export BUILD="$GITHUB_RUN_NUMBER"
           ./scripts/package-app.sh

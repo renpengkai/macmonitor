@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 构建 release 二进制并组装成 dist/MacMonitor.app + zip。需要在装有 Xcode 的 macOS 上运行 (即 GitHub Actions)。
-#   VERSION  CFBundleShortVersionString, 默认 0.1.0
+#   VERSION  CFBundleShortVersionString, 默认 0.1.1
 #   BUILD    CFBundleVersion, 默认 1
 set -euo pipefail
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 BUILD="${BUILD:-1}"
 ARCH="arm64"
 NAME="MacMonitor"

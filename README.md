@@ -17,9 +17,23 @@
 
 ## 安装
 
-从 GitHub Actions 构建产物或 Release 下载 `MacMonitor-x.y.z.zip`，解压后把 `MacMonitor.app` 放进「应用程序」。
+### Homebrew（推荐）
 
-应用为 ad-hoc 签名，首次打开前需去掉隔离属性：
+```bash
+brew install --cask renpengkai/tap/macmonitor
+```
+
+升级：
+
+```bash
+brew upgrade --cask macmonitor
+```
+
+### 手动安装
+
+从 [Releases](https://github.com/renpengkai/macmonitor/releases) 或 GitHub Actions 构建产物下载 `MacMonitor-x.y.z.zip`，解压后把 `MacMonitor.app` 放进「应用程序」。
+
+应用为 ad-hoc 签名，手动安装时首次打开前需去掉隔离属性（Homebrew 安装会自动处理）：
 
 ```bash
 xattr -cr /Applications/MacMonitor.app
